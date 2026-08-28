@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+
+# Ambientes Virtuais
+.venv/
+venv/
+env/
+
+# Segredos
+.env
+credentials/
+
+# IDEs
+.vscode/
+
+credentials/
+.env
+__pycache__/
+venv/
