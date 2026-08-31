@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import gspread
 from google.oauth2.service_account import Credentials
-from gspread.utils import ValueInputOption, ValueRenderOption
+from gspread.utils import ValueInputOption
+
 _SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
 ]
@@ -30,22 +31,6 @@ _COLUNAS_ALIMENTOS = [
     "nome", "fonte", "porcao_base_g",
     "kcal", "proteina", "carbo", "gordura", "fibra",
 ]
-
-
-def _to_float(valor) -> float:
-    """Garante que strings com vírgula (padrão PT-BR) virem float corretamente."""
-    if valor is None or valor == "":
-        return 0.0
-    if isinstance(valor, str):
-        limpo = valor.replace(".", "").replace(",", ".")
-        try:
-            return float(limpo)
-        except ValueError:
-            return 0.0
-    try:
-        return float(valor)
-    except (ValueError, TypeError):
-        return 0.0
 
 
 def get_client(credentials_path: str) -> gspread.Client:
@@ -92,20 +77,19 @@ def carregar_cache_alimentos(client: gspread.Client, spreadsheet_id: str) -> lis
     """
     planilha = client.open_by_key(spreadsheet_id)
     worksheet = planilha.worksheet(_ABA_ALIMENTOS)
-    
-    # Extrai o valor matemático cru do Google Sheets, ignorando formatação visual
-    registros = worksheet.get_all_records(value_render_option=ValueRenderOption.unformatted)
+    registros = worksheet.get_all_records()  # já usa a 1ª linha como header
+
     cache = []
     for registro in registros:
         cache.append({
             "nome": str(registro.get("nome", "")).strip(),
             "fonte": str(registro.get("fonte", "")).strip(),
-            "porcao_base_g": _to_float(registro.get("porcao_base_g")),
-            "kcal": _to_float(registro.get("kcal")),
-            "proteina": _to_float(registro.get("proteina")),
-            "carbo": _to_float(registro.get("carbo")),
-            "gordura": _to_float(registro.get("gordura")),
-            "fibra": _to_float(registro.get("fibra")),
+            "porcao_base_g": float(registro.get("porcao_base_g") or 0),
+            "kcal": float(registro.get("kcal") or 0),
+            "proteina": float(registro.get("proteina") or 0),
+            "carbo": float(registro.get("carbo") or 0),
+            "gordura": float(registro.get("gordura") or 0),
+            "fibra": float(registro.get("fibra") or 0),
         })
     return cache
 
@@ -118,11 +102,13 @@ def append_alimento_customizado(
     """
     Adiciona uma linha na aba "Alimentos" com fonte fixa em "Custom".
 
-    alimento deve conter: nome, porcao_base_g, kcal, proteina, carbo,
-    gordura, fibra (sem a chave 'fonte' — ela é definida aqui).
+    alimento deve conter idealmente: nome, porcao_base_g, kcal, proteina,
+    carbo, gordura, fibra (sem a chave 'fonte' — ela é definida aqui).
+    Campos numéricos ausentes (ex: fibra não informada pelo LLM) viram 0
+    em vez de quebrar a escrita.
     """
     linha = {**alimento, "fonte": "Custom"}
-    valores = [linha[coluna] for coluna in _COLUNAS_ALIMENTOS]
+    valores = [linha.get(coluna, 0 if coluna not in ("nome", "fonte") else "") for coluna in _COLUNAS_ALIMENTOS]
 
     planilha = client.open_by_key(spreadsheet_id)
     worksheet = planilha.worksheet(_ABA_ALIMENTOS)

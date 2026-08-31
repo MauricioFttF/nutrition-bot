@@ -16,9 +16,17 @@ import json
 from typing import cast
 
 from google import genai
-from google.genai import types
+from google.genai import errors, types
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-_MODELO = "gemini-3.6-flash"
+_MODELO = "gemini-3.5-flash-lite"
+
+_retry_erros_transitorios = retry(
+    retry=retry_if_exception_type(errors.ServerError),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=2, min=2, max=15),
+    reraise=True,
+)
 
 _PROMPT_TEXTO = """Extraia informações de registro alimentar da mensagem abaixo.
 
@@ -88,6 +96,7 @@ def _parte_imagem(imagem_bytes: bytes) -> types.Part:
     return types.Part.from_bytes(data=imagem_bytes, mime_type="image/jpeg")
 
 
+@_retry_erros_transitorios
 def parsear_texto(mensagem: str, api_key: str) -> dict:
     """
     Envia a mensagem do usuário pro Gemini e retorna:
@@ -111,6 +120,7 @@ def parsear_texto(mensagem: str, api_key: str) -> dict:
     return cast(dict, _extrair_json(resposta.text or ""))
 
 
+@_retry_erros_transitorios
 def parsear_foto_comida(imagem_bytes: bytes, api_key: str) -> list[dict]:
     """
     Retorna lista de itens estimados a partir de uma foto de refeição:
@@ -127,6 +137,7 @@ def parsear_foto_comida(imagem_bytes: bytes, api_key: str) -> list[dict]:
     return cast(list[dict], _extrair_json(resposta.text or ""))
 
 
+@_retry_erros_transitorios
 def parsear_foto_rotulo(imagem_bytes: bytes, api_key: str) -> dict:
     """
     Extrai dados nutricionais de uma foto de rótulo/tabela nutricional:
@@ -144,6 +155,7 @@ def parsear_foto_rotulo(imagem_bytes: bytes, api_key: str) -> dict:
     return cast(dict, _extrair_json(resposta.text or ""))
 
 
+@_retry_erros_transitorios
 def parsear_texto_cadastro(mensagem: str, api_key: str) -> dict:
     """
     Extrai dados de cadastro de alimento a partir de texto livre — usado
